@@ -16,12 +16,95 @@ import { tablesToSQL, unnestToSQL } from './tables'
 import { unionToSQL } from './union'
 import { namedWindowExprListToSQL, windowFuncToSQL } from './window'
 
-const exprToSQLConvertFn = {
+const exprToSQLConvertFn = {}
+
+function varToSQL(expr) {
+  const { prefix = '@', name, members, quoted, suffix } = expr
+  const val = []
+  const varName = members && members.length > 0 ? `${name}.${members.join('.')}` : name
+  let result = `${prefix || ''}${varName}`
+  if (suffix) result += suffix
+  val.push(result)
+  return [quoted, val.join(' '), quoted].filter(hasVal).join('')
+}
+
+function exprToSQL(exprOrigin) {
+  if (!exprOrigin) return
+  const expr = exprOrigin
+  if (exprOrigin.ast) {
+    const { ast } = expr
+    Reflect.deleteProperty(expr, ast)
+    for (const key of Object.keys(ast)) {
+      expr[key] = ast[key]
+    }
+  }
+  const { type } = expr
+  if (type === 'expr') return exprToSQL(expr.expr)
+  return exprToSQLConvertFn[type] ? exprToSQLConvertFn[type](expr) : literalToSQL(expr)
+}
+
+function arrayAccessToSQL(expr) {
+  const { expr: baseExpr, indices } = expr
+  let result = null
+  // For column references in array access, use the column name directly without backticks
+  if (baseExpr.type === 'column_ref') {
+    result = baseExpr.column
+  } else {
+    result = exprToSQL(baseExpr)
+  }
+  if (indices && indices.length > 0) {
+    for (const index of indices) {
+      result += `[${exprToSQL(index)}]`
+    }
+  }
+  return result
+}
+
+function unaryToSQL(unarExpr) {
+  const { operator, parentheses, expr } = unarExpr
+  const space = (operator === '-' || operator === '+' || operator === '~' || operator === '!') ? '' : ' '
+  const str = `${operator}${space}${exprToSQL(expr)}`
+  return parentheses ? `(${str})` : str
+}
+
+function getExprListSQL(exprList) {
+  if (!exprList) return []
+  if (!Array.isArray(exprList)) exprList = [exprList]
+  return exprList.map(exprToSQL)
+}
+
+function mapObjectToSQL(mapExpr) {
+  const { keyword, expr } = mapExpr
+  const exprStr = expr.map(exprItem => [literalToSQL(exprItem.key), literalToSQL(exprItem.value)].join(', ')).join(', ')
+  return [toUpper(keyword), `[${exprStr}]`].join('')
+}
+
+function orderOrPartitionByToSQL(expr, prefix) {
+  if (!Array.isArray(expr)) return ''
+  let expressions = []
+  const upperPrefix = toUpper(prefix)
+  switch (upperPrefix) {
+    case 'ORDER BY':
+      expressions = expr.map(info => [exprToSQL(info.expr), info.type || 'ASC', toUpper(info.nulls)].filter(hasVal).join(' '))
+      break
+    case 'PARTITION BY':
+      expressions = expr.map(info => exprToSQL(info.expr))
+      break
+    default:
+      expressions = expr.map(info => exprToSQL(info.expr))
+      break
+  }
+  return connector(upperPrefix, expressions.join(', '))
+}
+
+// Populate exprToSQLConvertFn object after all functions are defined
+Object.assign(exprToSQLConvertFn, {
   alter             : alterExprToSQL,
   aggr_func         : aggrToSQL,
   any_value         : anyValueFuncToSQL,
   window_func       : windowFuncToSQL,
   'array'           : arrayStructExprToSQL,
+  array_access      : arrayAccessToSQL,
   assign            : assignToSQL,
   binary_expr       : binaryToSQL,
   case              : caseToSQL,
@@ -47,47 +130,10 @@ const exprToSQLConvertFn = {
   tables            : tablesToSQL,
   unnest            : unnestToSQL,
   'window'          : namedWindowExprListToSQL,
-}
-
-function varToSQL(expr) {
-  const { prefix = '@', name, members, quoted, suffix } = expr
-  const val = []
-  const varName = members && members.length > 0 ? `${name}.${members.join('.')}` : name
-  let result = `${prefix || ''}${varName}`
-  if (suffix) result += suffix
-  val.push(result)
-  return [quoted, val.join(' '), quoted].filter(hasVal).join('')
-}
-
-exprToSQLConvertFn.var = varToSQL
-
-function exprToSQL(exprOrigin) {
-  if (!exprOrigin) return
-  const expr = exprOrigin
-  if (exprOrigin.ast) {
-    const { ast } = expr
-    Reflect.deleteProperty(expr, ast)
-    for (const key of Object.keys(ast)) {
-      expr[key] = ast[key]
-    }
-  }
-  const { type } = expr
-  if (type === 'expr') return exprToSQL(expr.expr)
-  return exprToSQLConvertFn[type] ? exprToSQLConvertFn[type](expr) : literalToSQL(expr)
-}
-
-function unaryToSQL(unarExpr) {
-  const { operator, parentheses, expr } = unarExpr
-  const space = (operator === '-' || operator === '+' || operator === '~' || operator === '!') ? '' : ' '
-  const str = `${operator}${space}${exprToSQL(expr)}`
-  return parentheses ? `(${str})` : str
-}
-
-function getExprListSQL(exprList) {
-  if (!exprList) return []
-  if (!Array.isArray(exprList)) exprList = [exprList]
-  return exprList.map(exprToSQL)
-}
+  var               : varToSQL,
+  unary_expr        : unaryToSQL,
+  map_object        : mapObjectToSQL,
+})
 
 exprToSQLConvertFn.expr_list = expr => {
   const result = getExprListSQL(expr.value)
@@ -101,34 +147,6 @@ exprToSQLConvertFn.expr_list = expr => {
 exprToSQLConvertFn.select = expr => {
   const str = typeof expr._next === 'object' ? unionToSQL(expr) : selectToSQL(expr)
   return expr.parentheses ? `(${str})` : str
-}
-
-exprToSQLConvertFn.unary_expr = unaryToSQL
-
-function mapObjectToSQL(mapExpr) {
-  const { keyword, expr } = mapExpr
-  const exprStr = expr.map(exprItem => [literalToSQL(exprItem.key), literalToSQL(exprItem.value)].join(', ')).join(', ')
-  return [toUpper(keyword), `[${exprStr}]`].join('')
-}
-
-exprToSQLConvertFn.map_object = mapObjectToSQL
-
-function orderOrPartitionByToSQL(expr, prefix) {
-  if (!Array.isArray(expr)) return ''
-  let expressions = []
-  const upperPrefix = toUpper(prefix)
-  switch (upperPrefix) {
-    case 'ORDER BY':
-      expressions = expr.map(info => [exprToSQL(info.expr), info.type || 'ASC', toUpper(info.nulls)].filter(hasVal).join(' '))
-      break
-    case 'PARTITION BY':
-      expressions = expr.map(info => exprToSQL(info.expr))
-      break
-    default:
-      expressions = expr.map(info => exprToSQL(info.expr))
-      break
-  }
-  return connector(upperPrefix, expressions.join(', '))
 }
 
 export {

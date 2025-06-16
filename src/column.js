@@ -5,7 +5,6 @@ import { arrayDimensionToSymbol, castToSQL } from './func'
 import { tablesToSQL } from './tables'
 import {
   autoIncrementToSQL,
-  columnIdentifierToSql,
   commonOptionConnector,
   commonTypeValue,
   commentToSQL,
@@ -67,7 +66,8 @@ function columnDataType(definition) {
   if (!definition) return
   const { dataType, length, suffix, scale, expr } = definition
   const parentheses = length != null && true || false
-  let result = dataTypeToSQL({ dataType, length, suffix, scale, parentheses })
+  // eslint-disable-next-line prefer-object-spread
+  let result = dataTypeToSQL(Object.assign({}, definition, { dataType, length, suffix, scale, parentheses }))
   if (expr) result += exprToSQL(expr)
   if (definition.array) {
     const arrayExpr = arrayDimensionToSymbol(definition)
@@ -125,7 +125,7 @@ function columnOption(definition) {
   if (generated) columnOpt.push(nullSQL)
   columnOpt.push(autoIncrementToSQL(autoIncrement), toUpper(primaryKey), toUpper(uniqueKey), commentToSQL(comment))
   columnOpt.push(...commonTypeValue(characterSet))
-  if (database.toLowerCase() !== 'sqlite') columnOpt.push(exprToSQL(collate))
+  if (!database || database.toLowerCase() !== 'sqlite') columnOpt.push(exprToSQL(collate))
   columnOpt.push(...commonTypeValue(columnFormat))
   columnOpt.push(...commonTypeValue(storage))
   columnOpt.push(...columnReferenceDefinitionToSQL(referenceDefinition))
@@ -159,8 +159,17 @@ function columnDefinitionToSQL(columnDefinition) {
 
 function asToSQL(asStr) {
   if (!asStr) return ''
-  if (typeof asStr === 'object') return ['AS', exprToSQL(asStr)].join(' ')
-  return ['AS', /^(`?)[a-z_][0-9a-z_]*(`?)$/i.test(asStr) ? identifierToSql(asStr) : columnIdentifierToSql(asStr)].join(' ')
+  const { database } = getParserOpt()
+  const isClickHouse = database && database.toLowerCase() === 'clickhouse'
+
+  if (typeof asStr === 'object') {
+    // If it's a string literal being used as an alias, extract the value and treat as identifier
+    if (asStr.type === 'string' || asStr.type === 'single_quote_string') {
+      return ['AS', isClickHouse ? asStr.value : identifierToSql(asStr.value)].join(' ')
+    }
+    return ['AS', exprToSQL(asStr)].join(' ')
+  }
+  return ['AS', isClickHouse ? asStr : identifierToSql(asStr)].join(' ')
 }
 
 function fullTextSearchToSQL(expr) {

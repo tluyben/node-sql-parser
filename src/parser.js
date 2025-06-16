@@ -6,7 +6,7 @@ import { DEFAULT_OPT, setParserOpt } from './util'
 
 class Parser {
   astify(sql, opt = DEFAULT_OPT) {
-    const astInfo = this.parse(sql, opt)
+    const astInfo = this.parse(sql, opt || DEFAULT_OPT)
     return astInfo && astInfo.ast
   }
 
@@ -28,11 +28,13 @@ class Parser {
   }
 
   parse(sql, opt = DEFAULT_OPT) {
-    const { database = (PARSER_NAME || 'mysql') } = opt
-    setParserOpt(opt)
-    const typeCase = database.toLowerCase()
-    if (parsers[typeCase]) return parsers[typeCase](opt.trimQuery === false ? sql : sql.trim(), opt.parseOptions || DEFAULT_OPT.parseOptions)
-    throw new Error(`${database} is not supported currently`)
+    const actualOpt = opt || DEFAULT_OPT
+    const { database } = actualOpt
+    const dbType = database || (typeof PARSER_NAME === 'undefined' ? 'mysql' : PARSER_NAME) || 'mysql'
+    setParserOpt(actualOpt)
+    const typeCase = dbType.toLowerCase()
+    if (parsers[typeCase]) return parsers[typeCase](actualOpt.trimQuery === false ? sql : sql.trim(), actualOpt.parseOptions || DEFAULT_OPT.parseOptions)
+    throw new Error(`${dbType} is not supported currently`)
   }
 
   whiteListCheck(sql, whiteList, opt = DEFAULT_OPT) {

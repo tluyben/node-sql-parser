@@ -90,6 +90,7 @@ Import the JS file in your page:
 
 - Athena
 - BigQuery
+- ClickHouse
 - DB2
 - Hive
 - MariaDB
@@ -264,6 +265,19 @@ const parser = new Parser()
 const ast = parser.astify('SELECT * FROM t', opt)
 const sql = parser.sqlify(ast, opt)
 console.log(sql); // SELECT * FROM "t"
+```
+
+```javascript
+const opt = {
+  database: 'ClickHouse'
+}
+// import all databases parser
+const { Parser } = require('node-sql-parser')
+const parser = new Parser()
+// parse ClickHouse specific SQL with String data type
+const ast = parser.astify('CREATE TABLE users (id UInt64, name String, tags Array(String))', opt)
+const sql = parser.sqlify(ast, opt)
+console.log(sql); // CREATE TABLE `users` (`id` UInt64, `name` String, `tags` Array(String))
 ```
 
 ### Get TableList, ColumnList, Ast by `parse` function

@@ -14,7 +14,7 @@ import { collateToSQL } from './collate'
 // }
 
 const DEFAULT_OPT = {
-  database     : PARSER_NAME || 'mysql',
+  database     : typeof PARSER_NAME === 'undefined' ? 'mysql' : PARSER_NAME,
   type         : 'table',
   trimQuery    : true,
   parseOptions : {
@@ -168,6 +168,8 @@ function identifierToSql(ident, isDual) {
     case 'noql':
     case 'sqlite':
       return `"${ident}"`
+    case 'clickhouse':
+      return `\`${ident}\``
     case 'transactsql':
       return `[${ident}]`
     case 'bigquery':
@@ -296,7 +298,53 @@ function dataTypeToSQL(expr) {
   if (length != null) str = scale ? `${length}, ${scale}` : length
   if (parentheses) str = `(${str})`
   if (suffix && suffix.length) str += ` ${suffix.join(' ')}`
-  return `${dataType}${str}`
+
+  // Handle ClickHouse data type casing
+  const { database } = getParserOpt()
+  let finalDataType = dataType
+  if (database && database.toLowerCase() === 'clickhouse') {
+    // Map uppercase data types to their proper ClickHouse casing
+    const clickHouseDataTypeMap = {
+      STRING     : 'String',
+      INT8       : 'INT8',
+      INT16      : 'INT16',
+      INT32      : 'INT32',
+      INT64      : 'INT64',
+      UINT8      : 'UINT8',
+      UINT16     : 'UINT16',
+      UINT32     : 'UINT32',
+      UINT64     : 'UINT64',
+      FLOAT32    : 'FLOAT32',
+      FLOAT64    : 'FLOAT64',
+      UUID       : 'UUID',
+      DATETIME64 : 'DATETIME64',
+      ARRAY      : 'ARRAY',
+      TUPLE      : 'TUPLE',
+      MAP        : 'MAP',
+      NULLABLE   : 'NULLABLE',
+    }
+    finalDataType = clickHouseDataTypeMap[dataType] || dataType
+
+    // Handle complex ClickHouse types
+    if (dataType === 'ARRAY' && expr.elementType) {
+      return `${finalDataType}(${dataTypeToSQL(expr.elementType)})`
+    }
+    if (dataType === 'MAP' && expr.keyType && expr.valueType) {
+      return `${finalDataType}(${dataTypeToSQL(expr.keyType)}, ${dataTypeToSQL(expr.valueType)})`
+    }
+    if (dataType === 'NULLABLE' && expr.innerType) {
+      return `${finalDataType}(${dataTypeToSQL(expr.innerType)})`
+    }
+    if (dataType === 'TUPLE' && expr.elementTypes) {
+      const tupleTypes = expr.elementTypes.map(def => dataTypeToSQL(def)).join(', ')
+      return `${finalDataType}(${tupleTypes})`
+    }
+    if (dataType === 'DATETIME64' && expr.precision) {
+      return `${finalDataType}(${expr.precision})`
+    }
+  }
+
+  return `${finalDataType}${str}`
 }
 
 function arrayStructTypeToSQL(expr) {

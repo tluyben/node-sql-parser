@@ -74,8 +74,22 @@ function unionToSQL(stmt) {
   while (stmt._next) {
     const nextFun = typeToSQLFn[stmt._next.type]
     const unionKeyword = toUpper(stmt.set_op)
-    res.push(unionKeyword, nextFun(stmt._next))
-    stmt = stmt._next
+    if (nextFun) {
+      res.push(unionKeyword, nextFun(stmt._next))
+      stmt = stmt._next
+    } else if (Array.isArray(stmt._next)) {
+      // Handle case where _next might be an array of union items
+      for (const unionItem of stmt._next) {
+        const unionType = unionItem.union ? unionItem.union.type : unionItem.type
+        const unionFun = typeToSQLFn[unionType]
+        if (!unionFun) throw new Error(`Unknown SQL type: ${unionType}`)
+        const unionOp = toUpper(unionItem.set_type || unionItem.type || 'UNION')
+        res.push(unionOp, unionFun(unionItem.union || unionItem))
+      }
+      break
+    } else {
+      throw new Error(`Unknown SQL type: ${stmt._next.type}`)
+    }
   }
   res.push(_parentheses && ')', orderOrPartitionByToSQL(_orderby, 'order by'), limitToSQL(_limit))
   return res.filter(hasVal).join(' ')

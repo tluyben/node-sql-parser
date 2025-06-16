@@ -102,8 +102,22 @@ function funcToSQL(expr) {
   const overStr = overToSQL(over)
   const withinGroupStr = withinGroupToSQL(withinGroup)
   const suffixStr = exprToSQL(suffix)
-  const funcName = [literalToSQL(name.schema), name.name.map(literalToSQL).join('.')].filter(hasVal).join('.')
-  if (!args) return [funcName, withinGroupStr, overStr].filter(hasVal).join(' ')
+  let funcName = null
+  if (typeof name === 'string') {
+    funcName = name
+  } else if (name.name && Array.isArray(name.name)) {
+    funcName = [literalToSQL(name.schema), name.name.map(literalToSQL).join('.')].filter(hasVal).join('.')
+  } else if (name.name) {
+    funcName = [literalToSQL(name.schema), literalToSQL(name.name)].filter(hasVal).join('.')
+  } else {
+    funcName = literalToSQL(name)
+  }
+  if (!args) {
+    // Some functions don't require parentheses when they have no arguments
+    const noParensFunctions = ['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'ON', 'OFF', 'DMY']
+    const needsParens = !noParensFunctions.includes(toUpper(funcName))
+    return [`${funcName}${needsParens ? '()' : ''}`, withinGroupStr, overStr].filter(hasVal).join(' ')
+  }
   let separator = expr.separator || ', '
   if (toUpper(funcName) === 'TRIM') separator = ' '
   let str = [funcName]

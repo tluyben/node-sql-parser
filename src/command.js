@@ -8,7 +8,29 @@ import { multipleToSQL } from './union'
 
 function callToSQL(stmt) {
   const type = 'CALL'
-  const storeProcessCall = exprToSQL(stmt.expr)
+  const { expr } = stmt
+  let storeProcessCall = ''
+
+  if (expr) {
+    // Handle function type specially for CALL statements
+    if (expr.type === 'function' && expr.args === null) {
+      // For CALL statements, functions without args should not have parentheses
+      const { name } = expr
+      if (typeof name === 'string') {
+        storeProcessCall = name
+      } else if (name.name && Array.isArray(name.name)) {
+        storeProcessCall = [literalToSQL(name.schema), name.name.map(literalToSQL).join('.')].filter(hasVal).join('.')
+      } else if (name.name) {
+        storeProcessCall = [literalToSQL(name.schema), literalToSQL(name.name)].filter(hasVal).join('.')
+      } else {
+        storeProcessCall = literalToSQL(name)
+      }
+    } else {
+      // For functions with arguments or other expression types, use exprToSQL
+      storeProcessCall = exprToSQL(expr)
+    }
+  }
+
   return `${type} ${storeProcessCall}`
 }
 
@@ -95,7 +117,7 @@ function useToSQL(stmt) {
 function setVarToSQL(stmt) {
   const { type, expr, keyword } = stmt
   const action = toUpper(type)
-  const setItems = expr.map(exprToSQL).join(', ')
+  const setItems = expr.map(exprItem => exprToSQL(exprItem)).join(', ')
   return [action, toUpper(keyword), setItems].filter(hasVal).join(' ')
 }
 

@@ -92,8 +92,14 @@ function selectToSQL(stmt) {
   clauses.push(commonOptionConnector(keyword, exprToSQL, expr))
   clauses.push(commonOptionConnector('WHERE', exprToSQL, where))
   if (groupby) {
-    clauses.push(connector('GROUP BY', getExprListSQL(groupby.columns).join(', ')))
-    clauses.push(getExprListSQL(groupby.modifiers).join(', '))
+    // Handle both array format (ClickHouse) and object format
+    const groupByColumns = Array.isArray(groupby) ? groupby : groupby.columns
+    if (groupByColumns) {
+      clauses.push(connector('GROUP BY', getExprListSQL(groupByColumns).join(', ')))
+    }
+    if (groupby.modifiers) {
+      clauses.push(getExprListSQL(groupby.modifiers).join(', '))
+    }
   }
   clauses.push(commonOptionConnector('HAVING', exprToSQL, having))
   clauses.push(commonOptionConnector('QUALIFY', exprToSQL, qualify))
