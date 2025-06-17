@@ -1,5 +1,5 @@
 const { expect } = require('chai')
-const Parser = require('../output/prod/index').Parser
+const Parser = require('../src/parser').default
 
 describe('AST roundtrip tests', () => {
   const parser = new Parser()
