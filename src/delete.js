@@ -10,10 +10,11 @@ function deleteToSQL(stmt) {
   const clauses = [withToSQL(withInfo), 'DELETE']
   const { database } = getParserOpt()
   const isClickHouse = database && database.toLowerCase() === 'clickhouse'
+  const isDuckDB = database && database.toLowerCase() === 'duckdb'
 
   // Handle table references between DELETE and FROM
-  // ClickHouse always uses DELETE FROM syntax without table refs
-  if (!isClickHouse && columns && columns.length > 0) {
+  // ClickHouse and DuckDB always use DELETE FROM syntax without table refs
+  if (!isClickHouse && !isDuckDB && columns && columns.length > 0) {
     const tableRefs = columns.map(col => {
       if (col.expr && col.expr.type === 'column_ref') {
         // Use table name if available, otherwise use column name
@@ -28,7 +29,7 @@ function deleteToSQL(stmt) {
       return columnsToSQL([col], from)
     }).filter(hasVal).join(', ')
     clauses.push(tableRefs)
-  } else if (!isClickHouse && table && table.length > 0) {
+  } else if (!isClickHouse && !isDuckDB && table && table.length > 0) {
     // Case 2: DELETE a FROM db.t ... (table contains what to delete)
     // Output table refs when:
     // 1. table has addition = false/undefined (meaning it should be shown)

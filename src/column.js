@@ -161,15 +161,16 @@ function asToSQL(asStr) {
   if (!asStr) return ''
   const { database } = getParserOpt()
   const isClickHouse = database && database.toLowerCase() === 'clickhouse'
+  const isDuckDB = database && database.toLowerCase() === 'duckdb'
 
   if (typeof asStr === 'object') {
     // If it's a string literal being used as an alias, extract the value and treat as identifier
     if (asStr.type === 'string' || asStr.type === 'single_quote_string') {
-      return ['AS', isClickHouse ? asStr.value : identifierToSql(asStr.value)].join(' ')
+      return ['AS', (isClickHouse || isDuckDB) ? asStr.value : identifierToSql(asStr.value)].join(' ')
     }
     return ['AS', exprToSQL(asStr)].join(' ')
   }
-  return ['AS', isClickHouse ? asStr : identifierToSql(asStr)].join(' ')
+  return ['AS', (isClickHouse || isDuckDB) ? asStr : identifierToSql(asStr)].join(' ')
 }
 
 function fullTextSearchToSQL(expr) {

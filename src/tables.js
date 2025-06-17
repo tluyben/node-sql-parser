@@ -3,7 +3,7 @@ import { columnRefToSQL } from './column'
 import { exprToSQL } from './expr'
 import { valuesToSQL } from './insert'
 import { intervalToSQL } from './interval'
-import { commonOptionConnector, commonTypeValue, hasVal, identifierToSql, literalToSQL, toUpper } from './util'
+import { commonOptionConnector, commonTypeValue, hasVal, identifierToSql, literalToSQL, toUpper, getParserOpt } from './util'
 
 function unnestToSQL(unnestExpr) {
   const { type, as, expr, with_offset: withOffset } = unnestExpr
@@ -147,7 +147,18 @@ function tableToSQL(tableInfo) {
     const tableSampleSQL = ['TABLESAMPLE', exprToSQL(tablesample.expr), literalToSQL(tablesample.repeatable)].filter(hasVal).join(' ')
     result.push(tableSampleSQL)
   }
-  result.push(temporalTableToSQL(temporal_table), commonOptionConnector('AS', typeof as === 'string' ? identifierToSql : exprToSQL, as), operatorToSQL(operator))
+  // Handle table aliases differently for DuckDB (no AS keyword)
+  const { database: dbType } = getParserOpt()
+  const isDuckDB = dbType && dbType.toLowerCase() === 'duckdb'
+  let tableAliasSQL = ''
+  if (as) {
+    if (isDuckDB) {
+      tableAliasSQL = typeof as === 'string' ? identifierToSql(as) : exprToSQL(as)
+    } else {
+      tableAliasSQL = commonOptionConnector('AS', typeof as === 'string' ? identifierToSql : exprToSQL, as)
+    }
+  }
+  result.push(temporalTableToSQL(temporal_table), tableAliasSQL, operatorToSQL(operator))
   if (table_hint) result.push(toUpper(table_hint.keyword), `(${table_hint.expr.map(tableHintToSQL).filter(hasVal).join(', ')})`)
   const tableSQL = result.filter(hasVal).join(' ')
   return tableInfo.parentheses ? `(${tableSQL})` : tableSQL

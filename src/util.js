@@ -134,6 +134,7 @@ function columnIdentifierToSql(ident) {
   switch (database && database.toLowerCase()) {
     case 'athena':
     case 'db2':
+    case 'duckdb':
     case 'postgresql':
     case 'redshift':
     case 'snowflake':
@@ -161,6 +162,7 @@ function identifierToSql(ident, isDual) {
     case 'mariadb':
       return `\`${ident}\``
     case 'athena':
+    case 'duckdb':
     case 'postgresql':
     case 'redshift':
     case 'snowflake':
@@ -251,6 +253,10 @@ function literalToSQL(literal) {
     case 'unicode_string':
       str = `U&'${escape(value)}'`
       break
+    case 'object':
+      const pairs = value.map(pair => `'${pair.key}': ${literalToSQL(pair.value)}`).join(', ')
+      str = `{${pairs}}`
+      break
     default:
       break
   }
@@ -292,6 +298,7 @@ function onPartitionsToSQL(expr) {
   return result.join(' ')
 }
 
+// eslint-disable-next-line complexity
 function dataTypeToSQL(expr) {
   const { dataType, length, parentheses, scale, suffix } = expr
   let str = ''
@@ -299,11 +306,12 @@ function dataTypeToSQL(expr) {
   if (parentheses) str = `(${str})`
   if (suffix && suffix.length) str += ` ${suffix.join(' ')}`
 
-  // Handle ClickHouse data type casing
   const { database } = getParserOpt()
   let finalDataType = dataType
-  if (database && database.toLowerCase() === 'clickhouse') {
-    // Map uppercase data types to their proper ClickHouse casing
+  const databaseType = database && database.toLowerCase()
+
+  // Handle ClickHouse data types
+  if (databaseType === 'clickhouse') {
     const clickHouseDataTypeMap = {
       STRING     : 'String',
       INT8       : 'INT8',
@@ -325,23 +333,27 @@ function dataTypeToSQL(expr) {
     }
     finalDataType = clickHouseDataTypeMap[dataType] || dataType
 
-    // Handle complex ClickHouse types
-    if (dataType === 'ARRAY' && expr.elementType) {
-      return `${finalDataType}(${dataTypeToSQL(expr.elementType)})`
+    if (dataType === 'ARRAY' && expr.elementType) return `${finalDataType}(${dataTypeToSQL(expr.elementType)})`
+    if (dataType === 'MAP' && expr.keyType && expr.valueType) return `${finalDataType}(${dataTypeToSQL(expr.keyType)}, ${dataTypeToSQL(expr.valueType)})`
+    if (dataType === 'NULLABLE' && expr.innerType) return `${finalDataType}(${dataTypeToSQL(expr.innerType)})`
+    if (dataType === 'TUPLE' && expr.elementTypes) return `${finalDataType}(${expr.elementTypes.map(def => dataTypeToSQL(def)).join(', ')})`
+    if (dataType === 'DATETIME64' && expr.precision) return `${finalDataType}(${expr.precision})`
+  }
+
+  // Handle DuckDB data types with precision/scale
+  if (databaseType === 'duckdb') {
+    // Handle precision/scale for DECIMAL types in DuckDB
+    if (dataType === 'DECIMAL' && expr.precision != null && expr.scale != null) {
+      return `${dataType}(${expr.precision}, ${expr.scale})`
     }
-    if (dataType === 'MAP' && expr.keyType && expr.valueType) {
-      return `${finalDataType}(${dataTypeToSQL(expr.keyType)}, ${dataTypeToSQL(expr.valueType)})`
+    if (dataType === 'DECIMAL' && expr.precision != null) {
+      return `${dataType}(${expr.precision})`
     }
-    if (dataType === 'NULLABLE' && expr.innerType) {
-      return `${finalDataType}(${dataTypeToSQL(expr.innerType)})`
-    }
-    if (dataType === 'TUPLE' && expr.elementTypes) {
-      const tupleTypes = expr.elementTypes.map(def => dataTypeToSQL(def)).join(', ')
-      return `${finalDataType}(${tupleTypes})`
-    }
-    if (dataType === 'DATETIME64' && expr.precision) {
-      return `${finalDataType}(${expr.precision})`
-    }
+
+    if ((dataType === 'ARRAY' || dataType === 'LIST') && expr.elementType) return `${dataType}(${dataTypeToSQL(expr.elementType)})`
+    if (dataType === 'MAP' && expr.keyType && expr.valueType) return `${dataType}(${dataTypeToSQL(expr.keyType)}, ${dataTypeToSQL(expr.valueType)})`
+    if (dataType === 'STRUCT' && expr.fields) return `${dataType}(${expr.fields.map(field => `${identifierToSql(field.name)} ${dataTypeToSQL(field.type)}`).join(', ')})`
+    if (dataType === 'UNION' && expr.memberTypes) return `${dataType}(${expr.memberTypes.map(def => dataTypeToSQL(def)).join(', ')})`
   }
 
   return `${finalDataType}${str}`
