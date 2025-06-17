@@ -57,6 +57,10 @@ Import the JS file in your page:
 <script src="https://unpkg.com/node-sql-parser/umd/mysql.umd.js"></script>
 
 <script src="https://unpkg.com/node-sql-parser/umd/postgresql.umd.js"></script>
+
+<script src="https://unpkg.com/node-sql-parser/umd/clickhouse.umd.js"></script>
+
+<script src="https://unpkg.com/node-sql-parser/umd/duckdb.umd.js"></script>
 ```
 - `NodeSQLParser` object is on `window`
 
@@ -92,6 +96,7 @@ Import the JS file in your page:
 - BigQuery
 - ClickHouse
 - DB2
+- DuckDB
 - Hive
 - MariaDB
 - MySQL
@@ -102,6 +107,7 @@ Import the JS file in your page:
 - [FlinkSQL](https://ci.apache.org/projects/flink/flink-docs-stable/dev/table/sql/)
 - Snowflake(alpha)
 - [Noql](https://noql.synatic.dev/)
+- Trino
 - New issue could be made for other new database.
 
 ### Create AST for SQL statement
@@ -278,6 +284,19 @@ const parser = new Parser()
 const ast = parser.astify('CREATE TABLE users (id UInt64, name String, tags Array(String))', opt)
 const sql = parser.sqlify(ast, opt)
 console.log(sql); // CREATE TABLE `users` (`id` UInt64, `name` String, `tags` Array(String))
+```
+
+```javascript
+const opt = {
+  database: 'DuckDB'
+}
+// import all databases parser
+const { Parser } = require('node-sql-parser')
+const parser = new Parser()
+// parse DuckDB specific SQL with advanced data types
+const ast = parser.astify('CREATE TABLE users (id INTEGER, data STRUCT(name VARCHAR, tags LIST(VARCHAR)), metadata MAP(VARCHAR, VARCHAR))', opt)
+const sql = parser.sqlify(ast, opt)
+console.log(sql); // CREATE TABLE "users" ("id" INTEGER, "data" STRUCT("name" VARCHAR, "tags" LIST(VARCHAR)), "metadata" MAP(VARCHAR, VARCHAR))
 ```
 
 ### Get TableList, ColumnList, Ast by `parse` function

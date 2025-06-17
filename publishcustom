@@ -32,10 +32,20 @@ PKG_BASE="${OLD_NAME##*/}"
 NEW_NAME="${SCOPE}/${PKG_BASE}"
 
 echo "✏️  Renaming package from \"${OLD_NAME}\" to \"${NEW_NAME}\""
+echo "📈 Incrementing minor version..."
 node -e "
   const fs = require('fs');
   const pkg = require('./package.json');
   pkg.name = '${NEW_NAME}';
+  
+  // Increment minor version
+  const versionParts = pkg.version.split('.');
+  versionParts[1] = parseInt(versionParts[1]) + 1;
+  versionParts[2] = '0'; // Reset patch version
+  pkg.version = versionParts.join('.');
+  
+  console.log('  → Version updated to ' + pkg.version);
+  
   fs.writeFileSync(
     'package.json',
     JSON.stringify(pkg, null, 2) + '\\n'
