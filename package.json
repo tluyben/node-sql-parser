@@ -1,6 +1,6 @@
 {
   "name": "node-sql-parser",
-  "version": "5.4.3",
+  "version": "5.4.4",
   "description": "simple node sql parser",
   "main": "index.js",
   "types": "types.d.ts",
@@ -36,7 +36,6 @@
     "ast/",
     "build",
     "lib",
-    "src",
     "umd/",
     "index.d.ts",
     "index.js",
