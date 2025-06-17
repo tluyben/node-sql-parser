@@ -3,6 +3,7 @@ import { constraintDefinitionToSQL } from './constrain'
 import { exprToSQL } from './expr'
 import { arrayDimensionToSymbol, castToSQL } from './func'
 import { tablesToSQL } from './tables'
+import { registerColumnFunctions } from './column-ref-registry'
 import {
   autoIncrementToSQL,
   commonOptionConnector,
@@ -215,6 +216,13 @@ function columnsToSQL(columns, tables) {
   const isDual = getDual(tables)
   return columns.map(col => columnToSQL(col, isDual)).join(', ')
 }
+
+// Register functions to break circular dependency
+registerColumnFunctions({
+  columnRefToSQL,
+  fullTextSearchToSQL,
+  columnDefinitionToSQL,
+})
 
 export {
   arrayIndexToSQL,

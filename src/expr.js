@@ -5,7 +5,7 @@ import { assignToSQL } from './assign'
 import { binaryToSQL } from './binary'
 import { caseToSQL } from './case'
 import { collateToSQL } from './collate'
-// columnDefinitionToSQL, columnRefToSQL, fullTextSearchToSQL handled directly to avoid circular dependency
+import { getColumnRefToSQL, getFullTextSearchToSQL, getColumnDefinitionToSQL } from './column-ref-registry'
 import { anyValueFuncToSQL, castToSQL, extractFunToSQL, flattenFunToSQL, funcArgToSQL, funcToSQL, jsonObjectArgToSQL, lambdaToSQL, tablefuncFunToSQL } from './func'
 import { intervalToSQL } from './interval'
 import { jsonExprToSQL, jsonVisitorExprToSQL } from './json'
@@ -17,6 +17,49 @@ import { unionToSQL } from './union'
 import { namedWindowExprListToSQL, windowFuncToSQL } from './window'
 
 const exprToSQLConvertFn = {}
+
+// Fallback handlers for column functions to avoid circular dependency
+function columnRefFallback(expr) {
+  const { column, table, db, schema } = expr
+  if (column === '*') {
+    const parts = []
+    if (db && typeof db === 'string') parts.push(identifierToSql(db))
+    if (schema && typeof schema === 'string') parts.push(identifierToSql(schema))
+    if (table && typeof table === 'string') parts.push(identifierToSql(table))
+    parts.push('*')
+    return parts.join('.')
+  }
+  // For non-* columns, return a simple identifier to avoid breaking functionality
+  if (typeof column === 'string') {
+    return identifierToSql(column)
+  }
+  if (column && column.expr && column.expr.value) {
+    return identifierToSql(column.expr.value)
+  }
+  return literalToSQL(expr)
+}
+
+function fullTextSearchFallback(expr) {
+  const { match, columns, against } = expr
+  const columnNames = columns ? columns.map(col => col.column || 'column').join(', ') : 'column'
+  const matchPart = `${toUpper(match || 'MATCH')} (${columnNames})`
+  const againstPart = `${toUpper(against || 'AGAINST')} (?)`
+  return `${matchPart} ${againstPart}`
+}
+
+function columnDefinitionFallback(expr) {
+  const { column, definition } = expr
+  let columnName = ''
+  if (column && column.column) {
+    if (typeof column.column === 'string') {
+      columnName = identifierToSql(column.column)
+    } else if (column.column.expr && column.column.expr.value) {
+      columnName = identifierToSql(column.column.expr.value)
+    }
+  }
+  const dataType = definition && definition.dataType ? definition.dataType : ''
+  return `${columnName} ${dataType}`.trim()
+}
 
 function varToSQL(expr) {
   const { prefix = '@', name, members, quoted, suffix } = expr
@@ -41,73 +84,34 @@ function exprToSQL(exprOrigin) {
   const { type } = expr
   if (type === 'expr') return exprToSQL(expr.expr)
 
-  // Handle column_ref cases - use dynamic import to avoid circular dependency
+  // Handle column_ref cases - use registry to avoid circular dependency
   if (type === 'column_ref') {
-    try {
-      // Try to use the proper columnRefToSQL function
-      // eslint-disable-next-line global-require
-      const { columnRefToSQL } = require('./column')
+    const columnRefToSQL = getColumnRefToSQL()
+    if (columnRefToSQL) {
       return columnRefToSQL(expr)
-    } catch(circularDepError) {
-      // Fallback for circular dependency - minimal handling for * cases only
-      const { column, table, db, schema } = expr
-      if (column === '*') {
-        const parts = []
-        if (db && typeof db === 'string') parts.push(identifierToSql(db))
-        if (schema && typeof schema === 'string') parts.push(identifierToSql(schema))
-        if (table && typeof table === 'string') parts.push(identifierToSql(table))
-        parts.push('*')
-        return parts.join('.')
-      }
-      // For non-* columns, return a simple identifier to avoid breaking functionality
-      if (typeof column === 'string') {
-        return identifierToSql(column)
-      }
-      if (column && column.expr && column.expr.value) {
-        return identifierToSql(column.expr.value)
-      }
-      return literalToSQL(expr)
     }
+    // Fallback if not yet registered
+    return columnRefFallback(expr)
   }
 
-  // Handle fulltext_search cases - use dynamic import to avoid circular dependency
+  // Handle fulltext_search cases - use registry to avoid circular dependency
   if (type === 'fulltext_search') {
-    try {
-      // Try to use the proper fullTextSearchToSQL function
-      // eslint-disable-next-line global-require
-      const { fullTextSearchToSQL } = require('./column')
+    const fullTextSearchToSQL = getFullTextSearchToSQL()
+    if (fullTextSearchToSQL) {
       return fullTextSearchToSQL(expr)
-    } catch(circularDepError) {
-      // Fallback - basic fulltext search handling
-      const { match, columns, against } = expr
-      const columnNames = columns ? columns.map(col => col.column || 'column').join(', ') : 'column'
-      const matchPart = `${toUpper(match || 'MATCH')} (${columnNames})`
-      const againstPart = `${toUpper(against || 'AGAINST')} (?)`
-      return `${matchPart} ${againstPart}`
     }
+    // Fallback if not yet registered
+    return fullTextSearchFallback(expr)
   }
 
-  // Handle column_definition cases - use dynamic import to avoid circular dependency
+  // Handle column_definition cases - use registry to avoid circular dependency
   if (type === 'column_definition') {
-    try {
-      // Try to use the proper columnDefinitionToSQL function
-      // eslint-disable-next-line global-require
-      const { columnDefinitionToSQL } = require('./column')
+    const columnDefinitionToSQL = getColumnDefinitionToSQL()
+    if (columnDefinitionToSQL) {
       return columnDefinitionToSQL(expr)
-    } catch(circularDepError) {
-      // Fallback - basic column definition handling
-      const { column, definition } = expr
-      let columnName = ''
-      if (column && column.column) {
-        if (typeof column.column === 'string') {
-          columnName = identifierToSql(column.column)
-        } else if (column.column.expr && column.column.expr.value) {
-          columnName = identifierToSql(column.column.expr.value)
-        }
-      }
-      const dataType = definition && definition.dataType ? definition.dataType : ''
-      return `${columnName} ${dataType}`.trim()
     }
+    // Fallback if not yet registered
+    return columnDefinitionFallback(expr)
   }
 
   return exprToSQLConvertFn[type] ? exprToSQLConvertFn[type](expr) : literalToSQL(expr)
