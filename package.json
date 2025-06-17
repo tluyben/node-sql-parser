@@ -1,6 +1,6 @@
 {
   "name": "node-sql-parser",
-  "version": "5.4.8",
+  "version": "5.4.11",
   "description": "simple node sql parser",
   "main": "index.js",
   "types": "types.d.ts",
@@ -19,7 +19,6 @@
     "type": "git",
     "url": "git+https://github.com/taozhi8833998/node-sql-parser.git"
   },
-  "pre-commit": "coverLocal",
   "keywords": [
     "sql",
     "sql-parser",

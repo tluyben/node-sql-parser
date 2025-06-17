@@ -44,15 +44,25 @@ git push
 echo "🔧 Building project..."
 npm run build
 
-# 4. Pack
-echo "🔨 Running npm pack…"
+# 3.5 Test the package before publishing
+#echo "🧪 Testing package..."
+#node test-package.js
+#if [ $? -ne 0 ]; then
+#  echo "❌ Package test failed! Aborting publish."
+#  exit 1
+#fi
+
+# 4. Pack from the output/prod directory
+echo "🔨 Running npm pack from output/prod…"
+cd output/prod
 TARBALL=$(npm pack | tail -n1)
 echo "  → created ${TARBALL}"
+cd ../..
 
 # 5. Unpack
 TMPDIR=$(mktemp -d)
 echo "📂 Extracting to ${TMPDIR}"
-tar -xzf "${TARBALL}" -C "${TMPDIR}"
+tar -xzf "output/prod/${TARBALL}" -C "${TMPDIR}"
 
 PKGDIR="${TMPDIR}/package"
 pushd "${PKGDIR}" > /dev/null
@@ -83,6 +93,6 @@ popd > /dev/null
 
 # 8. Cleanup
 echo "🧹 Cleaning up…"
-rm -rf "${TMPDIR}" "${TARBALL}"
+rm -rf "${TMPDIR}" "output/prod/${TARBALL}"
 
 echo "🎉 Published ${NEW_NAME} v${NEW_VERSION}"
